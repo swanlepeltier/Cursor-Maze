@@ -27,6 +27,8 @@ export interface GameOptions {
 export const MAX_HEARTS = 3;
 export const PLAYER_RADIUS_PX = 8;
 export const INVULNERABILITY_MS = 1000;
+/** Enemies keep a short, stable physics step even when a frame arrives late. */
+export const ENEMY_STEP_MS = 48;
 
 export class MazeGame {
   readonly cols: number;
@@ -49,6 +51,11 @@ export class MazeGame {
   private readonly onEvent: (event: GameEvent) => void;
   private invulnerableUntil = 0;
   private wallContact = false;
+  /** Wall damage stays disabled until the pointer has reached a corridor once. */
+  private corridorSeen = false;
+  /** First tick after a (re)start arms the spawn protection. */
+  private armedAt: number | null = null;
+  private pausedAt: number | null = null;
 
   constructor({ cols, rows, rng = Math.random, onEvent }: GameOptions) {
     this.cols = cols;
@@ -71,12 +78,17 @@ export class MazeGame {
     this.player = cellCenter(this.maze.start);
     this.pointerInside = false;
     this.wallContact = false;
+    this.corridorSeen = false;
+    this.armedAt = null;
+    this.pausedAt = null;
     this.invulnerableUntil = 0;
     this.lastHitAt = Number.NEGATIVE_INFINITY;
   }
 
   start(): void {
     if (this.phase !== "idle") return;
+    this.corridorSeen = false;
+    this.armedAt = null;
     this.phase = "playing";
     this.onEvent("start");
   }
@@ -93,14 +105,21 @@ export class MazeGame {
     this.onEvent("next-level");
   }
 
-  pause(): void {
+  pause(now: number): void {
     if (this.phase !== "playing") return;
     this.phase = "paused";
+    this.pausedAt = now;
     this.onEvent("pause");
   }
 
-  resume(): void {
+  resume(now: number): void {
     if (this.phase !== "paused") return;
+    if (this.pausedAt !== null) {
+      const pausedFor = Math.max(0, now - this.pausedAt);
+      if (Number.isFinite(this.invulnerableUntil)) this.invulnerableUntil += pausedFor;
+      if (Number.isFinite(this.lastHitAt)) this.lastHitAt += pausedFor;
+    }
+    this.pausedAt = null;
     this.phase = "playing";
     this.onEvent("resume");
   }
@@ -126,8 +145,13 @@ export class MazeGame {
   tick(dtMs: number, now: number): void {
     if (this.phase !== "playing") return;
 
+    if (this.armedAt === null) {
+      this.armedAt = now;
+      this.invulnerableUntil = Math.max(this.invulnerableUntil, now + INVULNERABILITY_MS);
+    }
+
     this.elapsedMs += dtMs;
-    stepEnemies(this.enemies, this.maze, dtMs / 1000, this.cellSizePx, this.rng);
+    stepEnemies(this.enemies, this.maze, Math.min(ENEMY_STEP_MS, dtMs) / 1000, this.cellSizePx, this.rng);
 
     if (!this.pointerInside) return;
 
@@ -149,13 +173,15 @@ export class MazeGame {
     }
 
     const touching = circleHitsWall(this.maze, this.player, this.playerRadiusUnits());
-    if (touching) {
-      if (!this.wallContact) {
-        this.wallContact = true;
-        if (now >= this.invulnerableUntil) this.damage(now);
-      }
-    } else {
+    if (!touching) {
+      this.corridorSeen = true;
       this.wallContact = false;
+      return;
+    }
+
+    if (!this.wallContact) {
+      this.wallContact = true;
+      if (this.corridorSeen && now >= this.invulnerableUntil) this.damage(now);
     }
   }
 
