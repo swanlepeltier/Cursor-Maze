@@ -135,6 +135,10 @@ export class MazeGame {
 
   resume(now: number): void {
     if (this.phase !== "paused") return;
+    if (!this.pointer) {
+      this.pauseReason = "pointer-left";
+      return;
+    }
     if (this.pausedAt !== null) {
       const pausedFor = Math.max(0, now - this.pausedAt);
       if (Number.isFinite(this.invulnerableUntil)) this.invulnerableUntil += pausedFor;
@@ -263,6 +267,10 @@ export class MazeGame {
       return;
     }
     if (this.phase !== "playing") return;
+    if (!this.pointer) {
+      this.pause(now, "pointer-left");
+      return;
+    }
 
     if (this.armedAt === null) {
       this.armedAt = now;
