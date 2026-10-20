@@ -156,9 +156,16 @@ function findClosedEdge(maze: Maze): { a: Vec; b: Vec } {
   assert.equal(game.elapsedMs, 200, "paused time is not counted");
 
   game.resume(2000);
+  assert.equal(game.phase, "paused", "resume is refused while the pointer is outside");
+  assert.equal(game.pauseReason, "pointer-left");
+  game.tick(200, 2000);
+  assert.equal(game.elapsedMs, 200, "refused resume keeps the clock frozen");
+
+  game.movePointer(START_POINT.x, START_POINT.y, true, 2100);
+  game.resume(2200);
   assert.equal(game.phase, "playing");
   assert.equal(game.pauseReason, null);
-  game.tick(200, 2200);
+  game.tick(200, 2400);
   assert.equal(game.elapsedMs, 400);
 }
 
@@ -257,6 +264,150 @@ function findClosedEdge(maze: Maze): { a: Vec; b: Vec } {
   game.movePointer(target.x, target.y, true, 1100);
   game.tick(100, 1100);
   assert.ok(Math.abs(game.avatar.x - target.x) < 0.001, "100 ms at 900 px/s moves 90 px");
+}
+
+// 10. Large frames use several collision substeps without exceeding the speed budget.
+{
+  const game = new MazeGame({ cols: 15, rows: 9, rng: seeded(91) });
+  game.setCellSize(CELL);
+  game.enemies = [];
+  game.maze = openMaze(15, 9);
+  begin(game, 1000);
+
+  const start = { ...game.avatar };
+  const target = { x: CELL * 14, y: START_POINT.y };
+  game.movePointer(target.x, target.y, true, 1100);
+
+  game.tick(120, 1100);
+  assertAvatarClear(game, 1100);
+  assert.ok(
+    Math.abs(game.avatar.x - start.x - (AVATAR_SPEED_PX_S * 0.12)) < 0.01,
+    "120 ms moves exactly 108 px in several substeps",
+  );
+
+  const before = game.avatar.x;
+  game.tick(700, 1800);
+  assertAvatarClear(game, 1800);
+  assert.ok(
+    Math.abs(game.avatar.x - before - AVATAR_SPEED_PX_S * 0.7) < 0.01,
+    "700 ms moves exactly 630 px, not a teleport",
+  );
+  assert.ok(game.avatar.x < target.x, "the avatar is still short of the target");
+
+  game.tick(700, 2500);
+  assertAvatarClear(game, 2500);
+  assert.ok(Math.abs(game.avatar.x - target.x) < 0.01, "the next frame reaches the target");
+}
+
+// 10b. A 700 ms frame cannot tunnel through a wall either.
+{
+  const game = new MazeGame({ cols: 9, rows: 7, rng: seeded(96) });
+  game.setCellSize(CELL);
+  game.enemies = [];
+  const maze = openMaze(9, 7);
+  const startCell = maze.cells[0];
+  assert.ok(startCell);
+  maze.cells[0] = { ...startCell, e: true, s: true };
+  game.maze = maze;
+  begin(game, 1000);
+
+  const across = { x: CELL * 1.5, y: START_POINT.y };
+  game.movePointer(across.x, across.y, true, 1100);
+  game.tick(700, 1700);
+  assertAvatarClear(game, 1700);
+  assert.deepEqual(cellOfPx(game.avatar), { x: 0, y: 0 }, "the avatar stays behind the closed edge");
+  assert.equal(game.phase, "playing");
+}
+
+// 11. The avatar snaps to a nearby pointer but never jumps through a wall.
+{
+  const game = new MazeGame({ cols: 9, rows: 7, rng: seeded(92) });
+  game.setCellSize(CELL);
+  game.enemies = [];
+  game.maze = openMaze(9, 7);
+  begin(game, 1000);
+
+  const target = { x: START_POINT.x + 2.5, y: START_POINT.y };
+  game.movePointer(target.x, target.y, true, 1100);
+  game.tick(16, 1100);
+  assert.deepEqual(game.avatar, target, "a gap of 2.5 px snaps exactly to the pointer");
+  assertAvatarClear(game, 1100);
+}
+
+// 12. A live resize keeps the pursued avatar clear and scaled, not respawned.
+{
+  const game = new MazeGame({ cols: 9, rows: 7, rng: seeded(93) });
+  game.setCellSize(CELL);
+  game.enemies = [];
+  game.maze = openMaze(9, 7);
+  begin(game, 1000);
+
+  game.movePointer(START_POINT.x + 200, START_POINT.y, true, 1100);
+  run(game, 1100, 200);
+  assert.ok(game.avatar.x > START_POINT.x + 100, "the avatar is actively pursuing");
+  const before = { ...game.avatar };
+
+  game.setCellSize(56);
+  const radiusAt56 = PLAYER_RADIUS * (CELL / 56);
+  assert.equal(
+    circleHitsWall(game.maze, { x: game.avatar.x / 56, y: game.avatar.y / 56 }, radiusAt56),
+    false,
+    "resize never leaves the avatar inside a wall",
+  );
+  assert.ok(Math.abs(game.avatar.x - before.x * (56 / CELL)) < 0.001, "position is scaled, not reset");
+  assert.ok(Math.abs(game.avatar.y - before.y * (56 / CELL)) < 0.001);
+
+  game.tick(120, 1400);
+  assert.equal(
+    circleHitsWall(game.maze, { x: game.avatar.x / 56, y: game.avatar.y / 56 }, radiusAt56),
+    false,
+    "pursuit stays clear after resize",
+  );
+}
+
+// 13. Restarting during pursuit returns to a clean ready phase.
+{
+  const game = makeGame(94);
+  begin(game, 1000);
+  game.movePointer(CELL * 2.5, CELL * 2.5, true, 1100);
+  run(game, 1100, 200);
+  assert.ok(game.elapsedMs > 0);
+
+  game.restart();
+  assert.equal(game.phase, "ready");
+  assert.equal(game.pointer, null);
+  assert.equal(game.pointerInside, false);
+  assert.equal(game.pauseReason, null);
+  assert.equal(game.elapsedMs, 0);
+  assert.equal(game.hearts, 3);
+  assert.deepEqual(cellOfPx(game.avatar), game.maze.start, "the avatar restarts on the new start");
+  assertAvatarClear(game, 0);
+
+  game.movePointer(START_POINT.x, START_POINT.y, true, 1600);
+  game.tick(0, 1600);
+  assert.equal(game.phase, "playing");
+}
+
+// 14. A keyboard resume with the pointer outside stays paused and frozen.
+{
+  const game = makeGame(95);
+  begin(game, 1000);
+  game.tick(200, 1200);
+  const elapsed = game.elapsedMs;
+  game.movePointer(0, 0, false, 1300);
+  assert.equal(game.pauseReason, "pointer-left");
+
+  game.resume(1500);
+  assert.equal(game.phase, "paused", "resume without a board pointer is a no-op");
+  assert.equal(game.pauseReason, "pointer-left");
+  game.tick(200, 1700);
+  assert.equal(game.elapsedMs, elapsed);
+
+  game.movePointer(START_POINT.x, START_POINT.y, true, 1800);
+  game.resume(1900);
+  assert.equal(game.phase, "playing");
+  game.tick(200, 2100);
+  assert.equal(game.elapsedMs, elapsed + 200);
 }
 
 console.log("game.test: avatar collisions, ready phase, auto-pause and regressions OK");
