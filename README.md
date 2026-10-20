@@ -55,6 +55,10 @@ Le jeu est pensé pour un écran desktop avec une souris.
   pendant l'invulnérabilité : impossible de gagner en traversant un mur. Il
   glisse le long des murs quand le pas direct est bloqué et colle au curseur
   à moins de 3 px dans le même couloir.
+- **Conduite manuelle assumée** : l'avatar suit une ligne directe vers le
+  curseur, sans pathfinding ni assistance. Pointer la sortie à travers un mur
+  ne suffit donc pas : il faut le guider virage par virage. Se bloquer dans un
+  angle tant que le curseur est de l'autre côté du mur est intentionnel.
 - 3 cœurs. Toucher un mur coûte **un seul** cœur par contact, suivi d'environ
   une seconde d'invulnérabilité. Le contact ne se réarme qu'après être revenu
   dans un couloir, donc rester immobile dans un mur ne vide pas les cœurs.
@@ -71,7 +75,8 @@ Le jeu est pensé pour un écran desktop avec une souris.
 - Sortir le curseur du plateau pendant une partie met le jeu en pause
   immédiatement (motif « curseur hors du plateau »). Le chrono et
   l'invulnérabilité sont figés ; on reprend uniquement avec « Reprendre » ou
-  `Échap`, jamais automatiquement.
+  `Échap`, jamais automatiquement. La reprise n'est acceptée que si le curseur
+  est revenu dans le plateau ; sinon le jeu reste en pause.
 
 ## Architecture
 

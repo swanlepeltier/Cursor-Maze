@@ -545,6 +545,7 @@ export default function GameClient() {
               </p>
               <ul className="rules">
                 <li>Posez le curseur sur le départ pour lancer le chrono.</li>
+                <li>L&apos;avatar ne traverse pas les murs : guidez-le dans les virages.</li>
                 <li>Un mur touché coûte un cœur.</li>
                 <li>Un ennemi touché termine la partie.</li>
                 <li>Atteignez la sortie pour passer au niveau suivant.</li>
