@@ -29,6 +29,10 @@ import {
 
 const MUTE_KEY = "maze-cursor:muted";
 const CELL_TARGET = 64;
+const MIN_CELL = 56;
+const MIN_COLS = 7;
+const MIN_ROWS = 5;
+const MAX_FRAME_MS = 250;
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 let mutedValue: boolean | null = null;
@@ -120,12 +124,29 @@ function fitCell(cols: number, rows: number, width: number, height: number): num
   const pad = Math.ceil(estimate * (WALL_THICKNESS / 2));
   const widthCell = (width - pad * 2) / cols;
   const heightCell = (height - pad * 2) / rows;
-  return Math.max(24, Math.min(widthCell, heightCell));
+  return Math.min(widthCell, heightCell);
 }
 
+/**
+ * Pick odd maze dimensions so a cell stays at least MIN_CELL while keeping the
+ * classic 64 px target. The 7x5 grid is the absolute floor for tiny windows.
+ */
 function planLayout(width: number, height: number): Layout {
-  const cols = Math.max(9, Math.min(25, oddFloor(width / CELL_TARGET)));
-  const rows = Math.max(7, Math.min(19, oddFloor(height / CELL_TARGET)));
+  let cols = Math.max(MIN_COLS, Math.min(25, oddFloor(width / CELL_TARGET)));
+  let rows = Math.max(MIN_ROWS, Math.min(19, oddFloor(height / CELL_TARGET)));
+
+  while ((cols > MIN_COLS || rows > MIN_ROWS) && fitCell(cols, rows, width, height) < MIN_CELL) {
+    const widthCell = width / (cols + WALL_THICKNESS);
+    const heightCell = height / (rows + WALL_THICKNESS);
+    if (widthCell <= heightCell && cols > MIN_COLS) {
+      cols -= 2;
+    } else if (rows > MIN_ROWS) {
+      rows -= 2;
+    } else {
+      cols -= 2;
+    }
+  }
+
   return { cols, rows, cell: fitCell(cols, rows, width, height) };
 }
 
@@ -199,10 +220,12 @@ export default function GameClient() {
     const apply = (width: number, height: number, preserve: boolean) => {
       if (width < 40 || height < 40) return;
       const current = layoutRef.current;
-      const next: Layout =
-        preserve && current
-          ? { ...current, cell: fitCell(current.cols, current.rows, width, height) }
-          : planLayout(width, height);
+      const currentCell = current ? fitCell(current.cols, current.rows, width, height) : 0;
+      const keep =
+        preserve &&
+        current !== null &&
+        (currentCell >= MIN_CELL || (current.cols === MIN_COLS && current.rows === MIN_ROWS));
+      const next: Layout = keep ? { ...current, cell: currentCell } : planLayout(width, height);
       layoutRef.current = next;
       setLayout(next);
     };
@@ -254,7 +277,7 @@ export default function GameClient() {
       const canvas = canvasRef.current;
       if (!game || !current || !canvas) return;
 
-      const dt = Math.min(48, Math.max(0, now - last));
+      const dt = Math.min(MAX_FRAME_MS, Math.max(0, now - last));
       last = now;
 
       game.setCellSize(current.cell);
@@ -320,8 +343,9 @@ export default function GameClient() {
   const togglePause = useCallback(() => {
     const game = gameRef.current;
     if (!game) return;
-    if (game.phase === "playing") game.pause();
-    else if (game.phase === "paused") game.resume();
+    const now = performance.now();
+    if (game.phase === "playing") game.pause(now);
+    else if (game.phase === "paused") game.resume(now);
     setHud(toHud(game));
   }, []);
 
