@@ -20,8 +20,8 @@ export interface Scene {
   maze: Maze;
   cell: number;
   dpr: number;
-  player: Vec;
-  pointerInside: boolean;
+  avatar: Vec;
+  pointer: Vec | null;
   enemies: Enemy[];
   phase: Phase;
   invulnerable: boolean;
@@ -194,13 +194,50 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene): void {
     ctx.fill();
   }
 
+  if (scene.phase === "ready") {
+    const start = cellCenter(maze.start);
+    const sx = start.x * cell;
+    const sy = start.y * cell;
+    const pulse = reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(now / 380);
+    ctx.save();
+    ctx.setLineDash([cell * 0.09, cell * 0.07]);
+    ctx.lineDashOffset = reducedMotion ? 0 : -now / 55;
+    ctx.strokeStyle = `rgba(94, 234, 212, ${0.5 + pulse * 0.3})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, cell * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const pointerX = scene.pointer?.x ?? null;
+  const pointerY = scene.pointer?.y ?? null;
+
+  if (pointerX !== null && pointerY !== null) {
+    const gap = Math.hypot(pointerX - scene.avatar.x, pointerY - scene.avatar.y);
+    if (gap > 6) {
+      ctx.strokeStyle = "rgba(94, 234, 212, 0.6)";
+      ctx.lineWidth = 1.5;
+      for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+        const inner = 5;
+        const outer = 9;
+        ctx.beginPath();
+        ctx.moveTo(pointerX + Math.cos(angle) * inner, pointerY + Math.sin(angle) * inner);
+        ctx.lineTo(pointerX + Math.cos(angle) * outer, pointerY + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    }
+  }
+
   if (scene.phase !== "idle") {
-    const px = scene.player.x * cell;
-    const py = scene.player.y * cell;
+    const px = scene.avatar.x;
+    const py = scene.avatar.y;
     const blink = scene.invulnerable && !reducedMotion ? 0.45 + 0.4 * Math.sin(now / 45) : 1;
     const radius = PLAYER_RADIUS_PX;
+    const gap = pointerX !== null && pointerY !== null ? Math.hypot(pointerX - px, pointerY - py) : Infinity;
+    const separation = Number.isFinite(gap) ? Math.min(1, gap / (cell * 0.45)) : 1;
 
-    ctx.globalAlpha = scene.pointerInside ? blink : blink * 0.45;
+    ctx.globalAlpha = (0.6 + 0.4 * separation) * blink;
 
     const ringGlow = ctx.createRadialGradient(px, py, radius * 0.6, px, py, radius * 2.6);
     ringGlow.addColorStop(0, "rgba(94, 234, 212, 0.35)");

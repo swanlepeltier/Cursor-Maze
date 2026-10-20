@@ -211,7 +211,39 @@ button {
 }
 
 .board--live {
-  cursor: none;
+  cursor: crosshair;
+}
+
+.readyHint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(94, 234, 212, 0.38);
+  background: rgba(7, 10, 16, 0.86);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  backdrop-filter: blur(4px);
+  animation: overlayIn 160ms ease-out;
+}
+
+.readyHint::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(94, 234, 212, 0.8);
 }
 
 .canvas {

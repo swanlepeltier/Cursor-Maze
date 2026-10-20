@@ -12,7 +12,14 @@ import {
 } from "react";
 
 import { formatTime } from "@/lib/format";
-import { MAX_HEARTS, MazeGame, type GameEvent, type LoseCause, type Phase } from "@/lib/game";
+import {
+  MAX_HEARTS,
+  MazeGame,
+  type GameEvent,
+  type LoseCause,
+  type PauseReason,
+  type Phase,
+} from "@/lib/game";
 import { drawScene, scenePadding } from "@/lib/render";
 import { WALL_THICKNESS } from "@/lib/collision";
 import { SoundEngine } from "@/lib/sound";
@@ -101,6 +108,7 @@ interface HudState {
   attempts: number;
   elapsedMs: number;
   cause: LoseCause | null;
+  pauseReason: PauseReason | null;
 }
 
 function toHud(game: MazeGame): HudState {
@@ -111,6 +119,7 @@ function toHud(game: MazeGame): HudState {
     attempts: game.attempts,
     elapsedMs: game.elapsedMs,
     cause: game.cause,
+    pauseReason: game.pauseReason,
   };
 }
 
@@ -169,6 +178,7 @@ export default function GameClient() {
     attempts: 1,
     elapsedMs: 0,
     cause: null,
+    pauseReason: null,
   });
   const muted = useSyncExternalStore(subscribeMute, getMuteSnapshot, getMuteServerSnapshot);
   const reducedMotion = useSyncExternalStore(
@@ -287,8 +297,8 @@ export default function GameClient() {
         maze: game.maze,
         cell: current.cell,
         dpr: Math.min(2, window.devicePixelRatio || 1),
-        player: game.player,
-        pointerInside: game.pointerInside,
+        avatar: game.avatar,
+        pointer: game.pointer,
         enemies: game.enemies,
         phase: game.phase,
         invulnerable: game.isInvulnerable(now),
@@ -405,24 +415,24 @@ export default function GameClient() {
     const game = gameRef.current;
     const current = layoutRef.current;
     const canvas = canvasRef.current;
-    if (!game || !current || !canvas || game.phase !== "playing") return;
+    if (!game || !current || !canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const pad = scenePadding(current.cell);
     const x = event.clientX - rect.left - pad;
     const y = event.clientY - rect.top - pad;
     const inside = x >= 0 && y >= 0 && x <= current.cols * current.cell && y <= current.rows * current.cell;
+    const now = performance.now();
 
     if (!inside) {
-      game.movePointer(0, 0, false);
+      game.movePointer(0, 0, false, now);
       return;
     }
-    game.movePointer(x, y, true);
-
+    game.movePointer(x, y, true, now);
   }, []);
 
   const handlePointerLeave = useCallback(() => {
-    gameRef.current?.movePointer(0, 0, false);
+    gameRef.current?.movePointer(0, 0, false, performance.now());
   }, []);
 
   const playing = hud.phase === "playing";
@@ -516,18 +526,25 @@ export default function GameClient() {
             ref={canvasRef}
             className="canvas"
             role="img"
-            aria-label="Labyrinthe. Le curseur de la souris est le personnage."
+            aria-label="Labyrinthe. Le curseur guide l'avatar."
           />
+
+          {hud.phase === "ready" && (
+            <div className="readyHint" role="status">
+              Placez le curseur sur le départ
+            </div>
+          )}
 
           {hud.phase === "idle" && (
             <Overlay>
               <p className="eyebrow">Labyrinthe procédural</p>
               <h1 className="title">Cursor Maze</h1>
               <p className="lead">
-                Vous êtes le curseur. Traversez le labyrinthe, évitez les points rouges et rejoignez la
-                sortie turquoise.
+                Le curseur guide votre avatar. Traversez le labyrinthe, évitez les points rouges et
+                rejoignez la sortie turquoise.
               </p>
               <ul className="rules">
+                <li>Posez le curseur sur le départ pour lancer le chrono.</li>
                 <li>Un mur touché coûte un cœur.</li>
                 <li>Un ennemi touché termine la partie.</li>
                 <li>Atteignez la sortie pour passer au niveau suivant.</li>
@@ -543,8 +560,14 @@ export default function GameClient() {
           {hud.phase === "paused" && (
             <Overlay>
               <p className="eyebrow">En pause</p>
-              <h2 className="title">Reprenez votre souffle</h2>
-              <p className="lead">Le chrono est arrêté. Le labyrinthe vous attend.</p>
+              <h2 className="title">
+                {hud.pauseReason === "pointer-left" ? "Curseur hors du plateau" : "Reprenez votre souffle"}
+              </h2>
+              <p className="lead">
+                {hud.pauseReason === "pointer-left"
+                  ? "En pause — curseur hors du plateau. Ramenez le curseur puis reprenez quand vous voulez."
+                  : "Le chrono est arrêté. Le labyrinthe vous attend."}
+              </p>
               <div className="btnRow">
                 <button type="button" className="btn btn--primary" onClick={togglePause} autoFocus>
                   <PlayIcon />
@@ -599,7 +622,7 @@ export default function GameClient() {
       </main>
 
       <footer className="hint">
-        <span>Souris pour vous déplacer</span>
+        <span>Souris pour guider l&apos;avatar</span>
         <span aria-hidden="true">·</span>
         <span>Échap pause</span>
         <span aria-hidden="true">·</span>
