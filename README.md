@@ -29,6 +29,7 @@ Autres scripts :
 ```bash
 npm run lint       # ESLint (config Next.js)
 npm run typecheck  # tsc --noEmit
+npm test           # tests logique headless (node:assert + tsc)
 ```
 
 ## Contrôles
@@ -48,6 +49,9 @@ Le jeu est pensé pour un écran desktop avec une souris.
 - 3 cœurs. Toucher un mur coûte **un seul** cœur par contact, suivi d'environ
   une seconde d'invulnérabilité. Le contact ne se réarme qu'après être revenu
   dans un couloir, donc rester immobile dans un mur ne vide pas les cœurs.
+- Grâce de spawn : pendant la première seconde et tant que le pointeur n'a pas
+  atteint un couloir, aucun dégât de mur n'est possible. C'est vrai au
+  démarrage comme après « Réessayer » ou un niveau suivant.
 - Toucher un ennemi termine immédiatement la partie.
 - Sortir par la case turquoise en bas à droite déclenche la victoire.
 - À 0 cœur ou après un ennemi, « Réessayer » régénère un labyrinthe et remet
@@ -77,6 +81,8 @@ src/
     sound.ts          synthèse Web Audio (oscillateurs + bruit filtré)
     render.ts         pré-rendu du labyrinthe + rendu canvas par frame
     format.ts         formatage du chrono
+tests/
+    game.test.ts      grâce de spawn, chrono réel, invulnérabilité en pause
 ```
 
 Séparation volontaire :
@@ -97,8 +103,12 @@ Séparation volontaire :
   itératif : toutes les cellules sont reliées, donc la sortie est toujours
   atteignable (vérifiable par BFS avec `distanceField`).
 - La taille de cellule et le nombre de colonnes/lignes sont calculés à partir
-  du viewport (cellule ~64 px, minimum 56 px sur un écran desktop) : le
-  labyrinthe remplit l'espace disponible sans scroll.
+  du viewport (cellule ~64 px, minimum 56 px) : les dimensions sont réduites
+  jusqu'à tenir ce minimum, avec un plancher absolu de 7×5. Le labyrinthe
+  remplit l'espace disponible sans scroll.
+- Le chrono suit l'horloge réelle par pas de 200 ms (plafond 250 ms pour
+  ignorer un retour d'onglet) et ne compte pas les pauses. La simulation des
+  ennemis garde un pas plafonné à 48 ms pour rester stable.
 - Les collisions utilisent un rayon de 8 px autour du pointeur et des murs
   épais de 14 % d'une cellule ; seuls les murs du voisinage 3×3 sont testés.
 - Les ennemis se déplacent de centre de cellule en centre de cellule à
