@@ -6,3 +6,4 @@ build/
 next-env.d.ts
 .env*.local
 .DS_Store
+.test-build/
